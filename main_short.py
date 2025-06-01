@@ -32,7 +32,7 @@ config.set_webui_token("napcat")  # 设置 token (webui 的 token)
 
 bot = BotClient()
 
-client = OpenAI(api_key="sk-9c68dc233a6147aa922d1a3e18e16dc8", base_url="https://api.deepseek.com")
+client = OpenAI(api_key="已隐藏", base_url="https://api.deepseek.com")
 
 
 def isActionTime(lastTime, interval):
