@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext, ttk
 import base64
 import subprocess
 import os
@@ -9,9 +9,14 @@ import gmpy2
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+from Crypto.Random import get_random_bytes
 
 
+# ===================== RSA 功能 =====================
 def encrypt_text(original_text, peer_public_key_str):
+    """使用RSA公钥加密文本"""
     public_key = serialization.load_pem_public_key(peer_public_key_str.encode('utf-8'))
     cipher_text = public_key.encrypt(
         original_text.encode('utf-8'),
@@ -25,6 +30,7 @@ def encrypt_text(original_text, peer_public_key_str):
 
 
 def decrypt_text(base64_cipher_text, private_key_str):
+    """使用RSA私钥解密文本"""
     cipher_bytes = base64.b64decode(base64_cipher_text)
     private_key = serialization.load_pem_private_key(private_key_str.encode('utf-8'), password=None)
     plain_bytes = private_key.decrypt(
@@ -39,6 +45,7 @@ def decrypt_text(base64_cipher_text, private_key_str):
 
 
 def generate_key_from_pq(p, q):
+    """根据素数p和q生成RSA密钥对"""
     try:
         cmd = [sys.executable, "rsatool.py", "-p", str(p), "-q", str(q), "-o", "private.pem"]
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -68,17 +75,19 @@ def generate_key_from_pq(p, q):
 
 
 def generate_prime(bits):
+    """生成指定位数的大素数"""
     return int(gmpy2.next_prime(random.getrandbits(bits)))
 
 
 def auto_generate_pq():
+    """自动生成RSA所需的大素数p和q"""
     try:
         bits = int(bit_entry.get())
         p = generate_prime(bits)
         q = generate_prime(bits)
         p_input.delete(0, tk.END)
-        q_input.delete(0, tk.END)
         p_input.insert(0, str(p))
+        q_input.delete(0, tk.END)
         q_input.insert(0, str(q))
         messagebox.showinfo("成功", f"已生成 {bits} 位大素数 p 和 q")
     except Exception as e:
@@ -86,6 +95,7 @@ def auto_generate_pq():
 
 
 def on_generate_keys():
+    """根据输入的p和q生成RSA密钥"""
     try:
         p = int(p_input.get())
         q = int(q_input.get())
@@ -100,6 +110,7 @@ def on_generate_keys():
 
 
 def on_encrypt():
+    """执行RSA加密操作"""
     pubkey = pubkey_input.get("1.0", tk.END).strip()
     message = message_input.get("1.0", tk.END).strip()
     if not pubkey or not message:
@@ -115,6 +126,7 @@ def on_encrypt():
 
 
 def on_decrypt():
+    """执行RSA解密操作"""
     privkey = privkey_input.get("1.0", tk.END).strip()
     cipher = cipher_input.get("1.0", tk.END).strip()
     if not privkey or not cipher:
@@ -129,14 +141,91 @@ def on_decrypt():
         messagebox.showerror("解密失败", str(e))
 
 
-# ===================== GUI =====================
+# ===================== AES 功能 =====================
+def aes_encrypt():
+    """执行AES加密操作"""
+    try:
+        key = aes_key_entry.get().encode('utf-8')
+        plaintext = aes_plaintext_input.get("1.0", tk.END).strip()
+
+        if not key or not plaintext:
+            messagebox.showwarning("输入不完整", "请填写AES密钥和明文")
+            return
+
+        # 根据模式处理加密
+        mode = aes_mode_var.get()
+        if mode == "CBC":
+            iv = get_random_bytes(16)
+            cipher = AES.new(key, AES.MODE_CBC, iv)
+            ciphertext = cipher.encrypt(pad(plaintext.encode(), AES.block_size))
+            result = base64.b64encode(iv + ciphertext).decode('utf-8')
+        elif mode == "ECB":
+            cipher = AES.new(key, AES.MODE_ECB)
+            ciphertext = cipher.encrypt(pad(plaintext.encode(), AES.block_size))
+            result = base64.b64encode(ciphertext).decode('utf-8')
+
+        aes_ciphertext_output.delete("1.0", tk.END)
+        aes_ciphertext_output.insert(tk.END, result)
+        messagebox.showinfo("AES加密成功", "消息已成功加密")
+    except Exception as e:
+        messagebox.showerror("AES加密失败", f"错误: {str(e)}")
+
+
+def aes_decrypt():
+    """执行AES解密操作"""
+    try:
+        key = aes_key_entry.get().encode('utf-8')
+        ciphertext = aes_ciphertext_input.get("1.0", tk.END).strip()
+
+        if not key or not ciphertext:
+            messagebox.showwarning("输入不完整", "请填写AES密钥和密文")
+            return
+
+        # 根据模式处理解密
+        mode = aes_mode_var.get()
+        raw = base64.b64decode(ciphertext)
+
+        if mode == "CBC":
+            iv = raw[:16]
+            ct = raw[16:]
+            cipher = AES.new(key, AES.MODE_CBC, iv)
+            plaintext = unpad(cipher.decrypt(ct), AES.block_size).decode()
+        elif mode == "ECB":
+            cipher = AES.new(key, AES.MODE_ECB)
+            plaintext = unpad(cipher.decrypt(raw), AES.block_size).decode()
+
+        aes_result_output.delete("1.0", tk.END)
+        aes_result_output.insert(tk.END, plaintext)
+        messagebox.showinfo("AES解密成功", "密文已成功解密")
+    except Exception as e:
+        messagebox.showerror("AES解密失败", f"错误: {str(e)}")
+
+
+def generate_aes_key():
+    """生成随机AES密钥"""
+    key_size = int(aes_key_size_var.get())
+    key = get_random_bytes(key_size)
+    aes_key_entry.delete(0, tk.END)
+    aes_key_entry.insert(0, base64.b64encode(key).decode('utf-8'))
+    messagebox.showinfo("成功", f"已生成{key_size * 8}位AES密钥")
+
+
+# ===================== GUI 界面 =====================
 root = tk.Tk()
-root.title("🔐 RSA 加密 / 解密工具（支持位数生成）")
-root.geometry("800x900")
+root.title("🔐 RSA/AES 加密解密工具")
+root.geometry("900x1100")
+
+# 创建选项卡
+tab_control = ttk.Notebook(root)
+
+# RSA选项卡
+rsa_tab = ttk.Frame(tab_control)
+tab_control.add(rsa_tab, text='RSA 加密')
+tab_control.pack(expand=1, fill="both", padx=10, pady=10)
 
 # p, q 位数生成区域
-tk.Label(root, text="🧮 指定位数生成 p 和 q", font=("Arial", 14, "bold")).pack(anchor="w", padx=10, pady=(10, 0))
-bit_frame = tk.Frame(root)
+tk.Label(rsa_tab, text="🧮 指定位数生成 p 和 q", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(10, 5))
+bit_frame = tk.Frame(rsa_tab)
 bit_frame.pack(fill="x", padx=10)
 
 tk.Label(bit_frame, text="位数:").grid(row=0, column=0, sticky="w")
@@ -144,10 +233,11 @@ bit_entry = tk.Entry(bit_frame, width=10)
 bit_entry.grid(row=0, column=1, sticky="w")
 bit_entry.insert(0, "1024")
 
-tk.Button(bit_frame, text="🎲 自动生成 p 和 q", command=auto_generate_pq, bg="#9C27B0", fg="white").grid(row=0, column=2, padx=10)
+tk.Button(bit_frame, text="🎲 自动生成 p 和 q", command=auto_generate_pq, bg="#9C27B0", fg="white").grid(row=0, column=2,
+                                                                                                        padx=10)
 
 # p, q 输入
-pq_frame = tk.Frame(root)
+pq_frame = tk.Frame(rsa_tab)
 pq_frame.pack(fill="x", padx=10, pady=(5, 5))
 
 tk.Label(pq_frame, text="p:").grid(row=0, column=0, sticky="w")
@@ -158,38 +248,93 @@ tk.Label(pq_frame, text="q:").grid(row=1, column=0, sticky="w")
 q_input = tk.Entry(pq_frame, width=70)
 q_input.grid(row=1, column=1, padx=5)
 
-tk.Button(pq_frame, text="🔧 根据 p 和 q 生成密钥", command=on_generate_keys, bg="#FF9800", fg="white").grid(row=0, column=2, rowspan=2, padx=10)
+tk.Button(pq_frame, text="🔧 根据 p 和 q 生成密钥", command=on_generate_keys, bg="#FF9800", fg="white").grid(row=0,
+                                                                                                            column=2,
+                                                                                                            rowspan=2,
+                                                                                                            padx=10)
 
-# 加密区域
-tk.Label(root, text="🔐 加密部分", font=("Arial", 14, "bold")).pack(anchor="w", padx=10)
-tk.Label(root, text="📌 公钥 (PEM)").pack(anchor="w", padx=10)
-pubkey_input = scrolledtext.ScrolledText(root, height=6)
+# RSA加密区域
+tk.Label(rsa_tab, text="🔐 RSA 加密部分", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(20, 5))
+tk.Label(rsa_tab, text="📌 公钥 (PEM)").pack(anchor="w", padx=10)
+pubkey_input = scrolledtext.ScrolledText(rsa_tab, height=6)
 pubkey_input.pack(fill="x", padx=10)
 
-tk.Label(root, text="✉️ 明文").pack(anchor="w", padx=10)
-message_input = scrolledtext.ScrolledText(root, height=3)
+tk.Label(rsa_tab, text="✉️ 明文").pack(anchor="w", padx=10)
+message_input = scrolledtext.ScrolledText(rsa_tab, height=3)
 message_input.pack(fill="x", padx=10)
 
-tk.Button(root, text="🔐 加密消息", command=on_encrypt, bg="#4CAF50", fg="white").pack(pady=5)
+tk.Button(rsa_tab, text="🔐 加密消息", command=on_encrypt, bg="#4CAF50", fg="white").pack(pady=5)
 
-tk.Label(root, text="📤 密文（Base64）").pack(anchor="w", padx=10)
-encrypt_output = scrolledtext.ScrolledText(root, height=3)
+tk.Label(rsa_tab, text="📤 密文（Base64）").pack(anchor="w", padx=10)
+encrypt_output = scrolledtext.ScrolledText(rsa_tab, height=3)
 encrypt_output.pack(fill="x", padx=10, pady=(0, 20))
 
-# 解密区域
-tk.Label(root, text="🔓 解密部分", font=("Arial", 14, "bold")).pack(anchor="w", padx=10)
-tk.Label(root, text="🔑 私钥 (PEM)").pack(anchor="w", padx=10)
-privkey_input = scrolledtext.ScrolledText(root, height=6)
+# RSA解密区域
+tk.Label(rsa_tab, text="🔓 RSA 解密部分", font=("Arial", 12, "bold")).pack(anchor="w", padx=10)
+tk.Label(rsa_tab, text="🔑 私钥 (PEM)").pack(anchor="w", padx=10)
+privkey_input = scrolledtext.ScrolledText(rsa_tab, height=6)
 privkey_input.pack(fill="x", padx=10)
 
-tk.Label(root, text="📥 密文（Base64）").pack(anchor="w", padx=10)
-cipher_input = scrolledtext.ScrolledText(root, height=3)
+tk.Label(rsa_tab, text="📥 密文（Base64）").pack(anchor="w", padx=10)
+cipher_input = scrolledtext.ScrolledText(rsa_tab, height=3)
 cipher_input.pack(fill="x", padx=10)
 
-tk.Button(root, text="🔓 解密密文", command=on_decrypt, bg="#2196F3", fg="white").pack(pady=5)
+tk.Button(rsa_tab, text="🔓 解密密文", command=on_decrypt, bg="#2196F3", fg="white").pack(pady=5)
 
-tk.Label(root, text="📄 明文结果").pack(anchor="w", padx=10)
-decrypt_output = scrolledtext.ScrolledText(root, height=3)
+tk.Label(rsa_tab, text="📄 明文结果").pack(anchor="w", padx=10)
+decrypt_output = scrolledtext.ScrolledText(rsa_tab, height=3)
 decrypt_output.pack(fill="x", padx=10, pady=(0, 20))
+
+# AES选项卡
+aes_tab = ttk.Frame(tab_control)
+tab_control.add(aes_tab, text='AES 加密')
+
+# AES密钥区域
+tk.Label(aes_tab, text="🔑 AES 密钥设置", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(10, 5))
+key_frame = tk.Frame(aes_tab)
+key_frame.pack(fill="x", padx=10)
+
+tk.Label(key_frame, text="密钥长度:").grid(row=0, column=0, sticky="w")
+aes_key_size_var = tk.StringVar(value="32")
+key_size_menu = ttk.Combobox(key_frame, textvariable=aes_key_size_var, width=10, state="readonly")
+key_size_menu['values'] = ('16', '24', '32')  # 对应128/192/256位
+key_size_menu.grid(row=0, column=1, sticky="w")
+
+tk.Label(key_frame, text="加密模式:").grid(row=0, column=2, padx=(20, 0), sticky="w")
+aes_mode_var = tk.StringVar(value="CBC")
+mode_menu = ttk.Combobox(key_frame, textvariable=aes_mode_var, width=10, state="readonly")
+mode_menu['values'] = ('CBC', 'ECB')
+mode_menu.grid(row=0, column=3, sticky="w")
+
+tk.Label(key_frame, text="密钥(Base64):").grid(row=1, column=0, sticky="w", pady=(5, 0))
+aes_key_entry = tk.Entry(key_frame, width=70)
+aes_key_entry.grid(row=1, column=1, columnspan=3, sticky="we", pady=(5, 0))
+
+tk.Button(key_frame, text="🎲 生成随机密钥", command=generate_aes_key, bg="#9C27B0", fg="white").grid(row=0, column=4,
+                                                                                                     rowspan=2, padx=10)
+
+# AES加密区域
+tk.Label(aes_tab, text="🔐 AES 加密", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(20, 5))
+tk.Label(aes_tab, text="✉️ 明文").pack(anchor="w", padx=10)
+aes_plaintext_input = scrolledtext.ScrolledText(aes_tab, height=5)
+aes_plaintext_input.pack(fill="x", padx=10)
+
+tk.Button(aes_tab, text="🔐 加密消息", command=aes_encrypt, bg="#4CAF50", fg="white").pack(pady=5)
+
+tk.Label(aes_tab, text="📤 密文（Base64）").pack(anchor="w", padx=10)
+aes_ciphertext_output = scrolledtext.ScrolledText(aes_tab, height=5)
+aes_ciphertext_output.pack(fill="x", padx=10, pady=(0, 20))
+
+# AES解密区域
+tk.Label(aes_tab, text="🔓 AES 解密", font=("Arial", 12, "bold")).pack(anchor="w", padx=10)
+tk.Label(aes_tab, text="📥 密文（Base64）").pack(anchor="w", padx=10)
+aes_ciphertext_input = scrolledtext.ScrolledText(aes_tab, height=5)
+aes_ciphertext_input.pack(fill="x", padx=10)
+
+tk.Button(aes_tab, text="🔓 解密密文", command=aes_decrypt, bg="#2196F3", fg="white").pack(pady=5)
+
+tk.Label(aes_tab, text="📄 解密结果").pack(anchor="w", padx=10)
+aes_result_output = scrolledtext.ScrolledText(aes_tab, height=5)
+aes_result_output.pack(fill="x", padx=10, pady=(0, 20))
 
 root.mainloop()
