@@ -9,9 +9,9 @@ import gmpy2
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-from Crypto.Random import get_random_bytes
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding as pad_module
+from cryptography.hazmat.backends import default_backend
 
 
 # ===================== RSA 功能 =====================
@@ -145,7 +145,8 @@ def on_decrypt():
 def aes_encrypt():
     """执行AES加密操作"""
     try:
-        key = aes_key_entry.get().encode('utf-8')
+        # 从Base64解码获取密钥字节
+        key = base64.b64decode(aes_key_entry.get())
         plaintext = aes_plaintext_input.get("1.0", tk.END).strip()
 
         if not key or not plaintext:
@@ -154,14 +155,32 @@ def aes_encrypt():
 
         # 根据模式处理加密
         mode = aes_mode_var.get()
+        backend = default_backend()
+
         if mode == "CBC":
-            iv = get_random_bytes(16)
-            cipher = AES.new(key, AES.MODE_CBC, iv)
-            ciphertext = cipher.encrypt(pad(plaintext.encode(), AES.block_size))
+            iv = os.urandom(16)
+            # 创建填充器
+            padder = pad_module.PKCS7(algorithms.AES.block_size).padder()
+            padded_data = padder.update(plaintext.encode()) + padder.finalize()
+
+            # 创建加密器并加密
+            cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=backend)
+            encryptor = cipher.encryptor()
+            ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+
+            # 组合IV和密文
             result = base64.b64encode(iv + ciphertext).decode('utf-8')
+
         elif mode == "ECB":
-            cipher = AES.new(key, AES.MODE_ECB)
-            ciphertext = cipher.encrypt(pad(plaintext.encode(), AES.block_size))
+            # 创建填充器
+            padder = pad_module.PKCS7(algorithms.AES.block_size).padder()
+            padded_data = padder.update(plaintext.encode()) + padder.finalize()
+
+            # 创建加密器并加密
+            cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=backend)
+            encryptor = cipher.encryptor()
+            ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+
             result = base64.b64encode(ciphertext).decode('utf-8')
 
         aes_ciphertext_output.delete("1.0", tk.END)
@@ -174,7 +193,8 @@ def aes_encrypt():
 def aes_decrypt():
     """执行AES解密操作"""
     try:
-        key = aes_key_entry.get().encode('utf-8')
+        # 从Base64解码获取密钥字节
+        key = base64.b64decode(aes_key_entry.get())
         ciphertext = aes_ciphertext_input.get("1.0", tk.END).strip()
 
         if not key or not ciphertext:
@@ -184,15 +204,38 @@ def aes_decrypt():
         # 根据模式处理解密
         mode = aes_mode_var.get()
         raw = base64.b64decode(ciphertext)
+        backend = default_backend()
 
         if mode == "CBC":
             iv = raw[:16]
             ct = raw[16:]
-            cipher = AES.new(key, AES.MODE_CBC, iv)
-            plaintext = unpad(cipher.decrypt(ct), AES.block_size).decode()
+
+            # 创建解密器
+            cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=backend)
+            decryptor = cipher.decryptor()
+
+            # 解密
+            padded_plaintext = decryptor.update(ct) + decryptor.finalize()
+
+            # 移除填充
+            unpadder = pad_module.PKCS7(algorithms.AES.block_size).unpadder()
+            plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
+
+            plaintext = plaintext.decode()
+
         elif mode == "ECB":
-            cipher = AES.new(key, AES.MODE_ECB)
-            plaintext = unpad(cipher.decrypt(raw), AES.block_size).decode()
+            # 创建解密器
+            cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=backend)
+            decryptor = cipher.decryptor()
+
+            # 解密
+            padded_plaintext = decryptor.update(raw) + decryptor.finalize()
+
+            # 移除填充
+            unpadder = pad_module.PKCS7(algorithms.AES.block_size).unpadder()
+            plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
+
+            plaintext = plaintext.decode()
 
         aes_result_output.delete("1.0", tk.END)
         aes_result_output.insert(tk.END, plaintext)
@@ -204,7 +247,7 @@ def aes_decrypt():
 def generate_aes_key():
     """生成随机AES密钥"""
     key_size = int(aes_key_size_var.get())
-    key = get_random_bytes(key_size)
+    key = os.urandom(key_size)
     aes_key_entry.delete(0, tk.END)
     aes_key_entry.insert(0, base64.b64encode(key).decode('utf-8'))
     messagebox.showinfo("成功", f"已生成{key_size * 8}位AES密钥")
