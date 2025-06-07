@@ -12,6 +12,85 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding as pad_module
 from cryptography.hazmat.backends import default_backend
+from tkinter import filedialog
+
+# ---------图片加密解密------------
+
+def encrypt_image():
+    try:
+        key = base64.b64decode(aes_key_entry.get())
+        mode = aes_mode_var.get()
+
+        filepath = filedialog.askopenfilename(title="选择要加密的图片", filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")])
+        if not filepath:
+            return
+
+        with open(filepath, "rb") as f:
+            image_data = f.read()
+
+        padder = pad_module.PKCS7(algorithms.AES.block_size).padder()
+        padded_data = padder.update(image_data) + padder.finalize()
+
+        backend = default_backend()
+
+        if mode == "CBC":
+            iv = os.urandom(16)
+            cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=backend)
+            encryptor = cipher.encryptor()
+            ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+            encrypted_data = iv + ciphertext
+        else:
+            cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=backend)
+            encryptor = cipher.encryptor()
+            ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+            encrypted_data = ciphertext
+
+        save_path = filedialog.asksaveasfilename(defaultextension=".enc", title="保存加密文件")
+        if save_path:
+            with open(save_path, "wb") as f:
+                f.write(encrypted_data)
+            messagebox.showinfo("加密成功", f"图片已加密保存到:\n{save_path}")
+
+    except Exception as e:
+        messagebox.showerror("图片加密失败", str(e))
+
+
+def decrypt_image():
+    try:
+        key = base64.b64decode(aes_key_entry.get())
+        mode = aes_mode_var.get()
+
+        filepath = filedialog.askopenfilename(title="选择加密文件", filetypes=[("Encrypted Files", "*.enc")])
+        if not filepath:
+            return
+
+        with open(filepath, "rb") as f:
+            enc_data = f.read()
+
+        backend = default_backend()
+
+        if mode == "CBC":
+            iv = enc_data[:16]
+            ciphertext = enc_data[16:]
+            cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=backend)
+        else:
+            ciphertext = enc_data
+            cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=backend)
+
+        decryptor = cipher.decryptor()
+        padded_plain = decryptor.update(ciphertext) + decryptor.finalize()
+
+        unpadder = pad_module.PKCS7(algorithms.AES.block_size).unpadder()
+        plain = unpadder.update(padded_plain) + unpadder.finalize()
+
+        save_path = filedialog.asksaveasfilename(defaultextension=".jpg", title="保存解密图片")
+        if save_path:
+            with open(save_path, "wb") as f:
+                f.write(plain)
+            messagebox.showinfo("解密成功", f"图片已解密保存到:\n{save_path}")
+    except Exception as e:
+        messagebox.showerror("图片解密失败", str(e))
+
 
 
 # ===================== RSA 功能 =====================
@@ -331,6 +410,16 @@ decrypt_output.pack(fill="x", padx=10, pady=(0, 20))
 # AES选项卡
 aes_tab = ttk.Frame(tab_control)
 tab_control.add(aes_tab, text='AES 加密')
+
+# 图片加密选项卡
+image_tab = ttk.Frame(tab_control)
+tab_control.add(image_tab, text='🖼️ 图片加密')
+
+tk.Label(image_tab, text="📷 图片加密与解密", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(10, 5))
+tk.Label(image_tab, text="✅ 使用 AES（与 AES 密钥与模式同步）").pack(anchor="w", padx=10)
+
+tk.Button(image_tab, text="🖼️ 加密图片文件", command=encrypt_image, bg="#4CAF50", fg="white").pack(padx=10, pady=10)
+tk.Button(image_tab, text="🖼️ 解密为图片", command=decrypt_image, bg="#2196F3", fg="white").pack(padx=10, pady=(0, 20))
 
 # AES密钥区域
 tk.Label(aes_tab, text="🔑 AES 密钥设置", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(10, 5))
